@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>第18章 · 知识库客服 Agent（最小前端）</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 18px; }
+    .status { font-size: 12px; color: #777; }
+    .message { margin: 12px 0; }
+    .message.user .bubble { background: #e8f0fe; }
+    .message.assistant .bubble { background: #f1f3f4; }
+    .bubble { padding: 10px 12px; border-radius: 10px; white-space: pre-wrap; line-height: 1.6; }
+    .trace { margin-top: 6px; font-size: 13px; }
+    .trace summary { cursor: pointer; color: #555; }
+    .trace ul { margin: 6px 0 0; padding-left: 20px; }
+    .error { color: #c5221f; font-size: 13px; margin-top: 6px; }
+    .composer { display: flex; gap: 8px; margin-top: 16px; }
+    textarea { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #ccc; resize: vertical; }
+    button { padding: 8px 14px; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
+    button.secondary { background: #5f6368; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>知识库客服 Agent</h1>
+  <div class="status" id="status">后端状态：未检查</div>
+
+  <div id="messageList"></div>
+
+  <div class="composer">
+    <textarea id="input" rows="2" placeholder="例如：退货流程是什么？退款多久到账？"></textarea>
+    <button id="sendBtn">发送</button>
+    <button id="stopBtn" class="secondary" disabled>停止</button>
+  </div>
+
+<script>
+"use strict";
+
+// 后端地址；与 backend/main.py 的 uvicorn 端口保持一致。
+const API_BASE = "http://localhost:8000";
+
+const listEl = document.getElementById("messageList");
+const inputEl = document.getElementById("input");
+const statusEl = document.getElementById("status");
+const sendBtn = document.getElementById("sendBtn");
+const stopBtn = document.getElementById("stopBtn");
+
+let abortController = null;
+let seq = 0;
+const nextId = () => `msg-${Date.now()}-${seq++}`;
+
+// --------------------------------------------------------- SSE 分帧解析
+function parseFrame(frame) {
+  const dataLines = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return null;
+  return JSON.parse(dataLines.join("\n"));
+}
+
+class SseParser {
+  constructor(onEvent) {
+    this.buffer = "";
+    this.onEvent = onEvent;
+  }
+  push(text) {
+    this.buffer += text;
+    let sep;
+    while ((sep = this.buffer.indexOf("\n\n")) >= 0) {
+      const frame = this.buffer.slice(0, sep);
+      this.buffer = this.buffer.slice(sep + 2);
+      const payload = parseFrame(frame);
+      if (payload) this.onEvent(payload);
+    }
+  }
+  flush() {
+    const tail = this.buffer.trim();
+    if (tail) {
+      const payload = parseFrame(tail);
+      if (payload) this.onEvent(payload);
+    }
+    this.buffer = "";
+  }
+}
+
+// --------------------------------------------------------- 消息渲染
+function addMessage(role) {
+  const id = nextId();
+  const wrap = document.createElement("div");
+  wrap.className = `message ${role}`;
+  wrap.dataset.id = id;
+  wrap.innerHTML = '<div class="bubble"></div>';
+  listEl.appendChild(wrap);
+  return id;
+}
+
+function getBubble(id) {
+  return listEl.querySelector(`[data-id="${id}"] .bubble`);
+}
+
+function addTrace(id, trace) {
+  const wrap = listEl.querySelector(`[data-id="${id}"]`);
+  let details = wrap.querySelector("details.trace");
+  if (!details) {
+    details = document.createElement("details");
+    details.className = "trace";
+    details.innerHTML = "<summary>工具调用 0 步</summary><ul></ul>";
+    wrap.appendChild(details);
+  }
+  const ul = details.querySelector("ul");
+  const li = document.createElement("li");
+  li.innerHTML = `<code></code>（${trace.status}）`;
+  li.querySelector("code").textContent = trace.tool;
+  if (trace.observation) {
+    const p = document.createElement("p");
+    p.textContent = trace.observation;
+    li.appendChild(p);
+  }
+  ul.appendChild(li);
+  details.querySelector("summary").textContent = `工具调用 ${ul.children.length} 步`;
+}
+
+function showError(id, message) {
+  const wrap = listEl.querySelector(`[data-id="${id}"]`);
+  const div = document.createElement("div");
+  div.className = "error";
+  div.textContent = `出错：${message}`;
+  wrap.appendChild(div);
+}
+
+function applyEvent(assistantId, evt) {
+  switch (evt.type) {
+    case "token":
+      getBubble(assistantId).textContent += evt.delta;
+      break;
+    case "tool_start":
+      addTrace(assistantId, { tool: evt.tool, status: "running" });
+      break;
+    case "tool_end":
+      addTrace(assistantId, { tool: evt.tool, status: "done", observation: evt.observation });
+      break;
+    case "error":
+      showError(assistantId, evt.message);
+      break;
+    case "done":
+      break;
+  }
+}
+
+// --------------------------------------------------------- 后端通信
+async function checkHealth() {
+  try {
+    const resp = await fetch(`${API_BASE}/health`);
+    statusEl.textContent = resp.ok ? "后端状态：正常" : `后端状态：${resp.status}`;
+  } catch (err) {
+    statusEl.textContent = `后端状态：连不上（${err.message}）`;
+  }
+}
+
+async function send(text) {
+  const assistantId = addMessage("assistant");
+  abortController = new AbortController();
+  sendBtn.disabled = true;
+  stopBtn.disabled = false;
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, session_id: "demo" }),
+      signal: abortController.signal,
+    });
+    if (!resp.ok) throw new Error(`后端返回 ${resp.status}`);
+    if (!resp.body) throw new Error("响应没有 body，无法流式读取");
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    const parser = new SseParser((evt) => applyEvent(assistantId, evt));
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.flush();
+  } catch (err) {
+    if (err.name !== "AbortError") showError(assistantId, err.message);
+  } finally {
+    abortController = null;
+    sendBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+}
+
+sendBtn.addEventListener("click", () => {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = "";
+  send(text);
+});
+
+stopBtn.addEventListener("click", () => abortController && abortController.abort());
+
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = "";
+    send(text);
+  }
+});
+
+checkHealth();
+</script>
+</body>
+</html>

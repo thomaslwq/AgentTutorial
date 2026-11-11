@@ -1,0 +1,2 @@
+# 递归切分与 HTML/CSV 清洗仅用标准库；解析 PDF 时安装 pypdf
+pypdf>=4.0,<6

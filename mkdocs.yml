@@ -1,0 +1,125 @@
+# ─────────────────────────────────────────────────────────────
+# AgentTutorial · AI Agent 全栈工程师教程 —— MkDocs 配置
+# 文档源码全部位于 docs/，每次 push 到 main 由 GitHub Actions
+# 自动构建并部署到 gh-pages 分支（GitHub Pages）。
+# 本地预览：mkdocs serve ；本地构建：mkdocs build
+# ─────────────────────────────────────────────────────────────
+
+site_name: AgentTutorial · AI Agent 全栈工程师教程
+site_description: 面向有编程基础工程师的 AI Agent 全栈实战教程：从 LLM 调用、Prompt、记忆、工具调用，到 RAG、多智能体编排、工程化与 FastAPI + React 全栈落地。
+site_author: Thomas.Lin
+site_url: https://thomaslwq.github.io/AgentTutorial/
+repo_url: https://github.com/thomaslwq/AgentTutorial
+repo_name: thomaslwq/AgentTutorial
+edit_uri: edit/main/docs/
+
+copyright: Copyright © 2026 Thomas.Lin · 基于 MIT License 开源
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.top
+    - navigation.path
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: 切换到暗色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+  - git-revision-date:
+
+markdown_extensions:
+  - admonition
+  - abbr
+  - attr_list
+  - md_in_html
+  - footnotes
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - def_list
+  - tables
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+
+nav:
+  - 首页: index.md
+  - 课程指南:
+      - 学习路线与前置要求: appendix/getting-started.md
+      - 环境搭建: appendix/environment-setup.md
+      - 如何参与与新增章节: appendix/contributing.md
+      - 路线图与待写章节: appendix/roadmap.md
+  - 模块一 · 认知基础：从 LLM 到 Agent:
+      - 第 01 章 什么是 Agent: module-01-basics/ch01-what-is-agent.md
+      - 第 02 章 LLM 调用与 Prompt 工程: module-01-basics/ch02-llm-prompt.md
+      - 第 03 章 记忆系统: module-01-basics/ch03-memory.md
+      - 第 04 章 工具调用 Function Calling: module-01-basics/ch04-function-calling.md
+      - 第 05 章 ReAct 推理与行动: module-01-basics/ch05-react.md
+  - 模块二 · RAG 全链路:
+      - 第 06 章 RAG 原理与整体架构: module-02-rag/ch06-rag-overview.md
+      - 第 07 章 文档解析与切分: module-02-rag/ch07-parse-chunk.md
+      - 第 08 章 Embedding 与向量检索: module-02-rag/ch08-embedding-retrieval.md
+      - 第 09 章 RAG 增强技术与评测: module-02-rag/ch09-rag-advanced-eval.md
+  - 模块三 · 规划与多智能体:
+      - 第 10 章 任务规划与自我反思: module-03-planning-multiagent/ch10-planning-reflection.md
+      - 第 11 章 多智能体协作: module-03-planning-multiagent/ch11-multi-agent.md
+      - 第 12 章 LangGraph 状态图编排: module-03-planning-multiagent/ch12-langgraph.md
+  - 模块四 · Agent 工程化:
+      - 第 13 章 可观测性与评测: module-04-engineering/ch13-observability-eval.md
+      - 第 14 章 安全与成本控制: module-04-engineering/ch14-security-cost.md
+      - 第 15 章 部署与运维: module-04-engineering/ch15-deployment-ops.md
+  - 模块五 · 全栈落地:
+      - 第 16 章 FastAPI 后端服务化与流式输出: module-05-fullstack/ch16-fastapi-service.md
+      - 第 17 章 前端对话 UI（React + SSE 流式）: module-05-fullstack/ch17-frontend-chat-ui.md
+      - 第 18 章 端到端实战：知识库客服 Agent: module-05-fullstack/ch18-end-to-end-project.md
+  - 附录:
+      - 术语表: appendix/glossary.md
+      - 常见问题 FAQ: appendix/faq.md

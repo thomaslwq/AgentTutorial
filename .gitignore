@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# MkDocs 构建产物（CI 自动生成，不入库）
+site/
+
+# 环境变量与密钥（严禁提交真实 Key）
+.env
+.env.local
+
+# 评测/运行临时产物
+*.jsonl
+.traces/
+
+# 前端
+node_modules/
+dist/
+
+# 编辑器/系统
+.DS_Store
+.idea/
+.vscode/

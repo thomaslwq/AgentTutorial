@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>第17章 · SSE 流式接收 Demo（纯 HTML/JS）</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 18px; }
+    .message { margin: 12px 0; }
+    .message.user .bubble { background: #e8f0fe; }
+    .message.assistant .bubble { background: #f1f3f4; }
+    .bubble { padding: 10px 12px; border-radius: 10px; white-space: pre-wrap; line-height: 1.6; }
+    .trace { margin-top: 6px; font-size: 13px; }
+    .trace summary { cursor: pointer; color: #555; }
+    .trace ul { margin: 6px 0 0; padding-left: 20px; }
+    .error { color: #c5221f; font-size: 13px; margin-top: 6px; }
+    .composer { display: flex; gap: 8px; margin-top: 16px; }
+    textarea { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #ccc; resize: vertical; }
+    button { padding: 8px 14px; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
+    button.secondary { background: #5f6368; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+    .toolbar input[type="url"] { flex: 1; min-width: 220px; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; }
+    .hint { font-size: 12px; color: #777; }
+  </style>
+</head>
+<body>
+  <h1>SSE 流式接收 Demo</h1>
+  <p class="hint">左侧「模拟流式」无需后端，直接在浏览器里走一遍分帧解析；「连接后端」向下方地址发 POST，读取真实 <code>text/event-stream</code>。事件契约与第17章 chat.tsx 一致。</p>
+
+  <div class="toolbar">
+    <input type="url" id="apiUrl" value="http://localhost:8000/api/chat" />
+    <button id="mockBtn" class="secondary">模拟流式</button>
+    <button id="sendBtn">连接后端</button>
+    <button id="stopBtn" class="secondary" disabled>停止</button>
+  </div>
+
+  <div id="messageList"></div>
+
+  <div class="composer">
+    <textarea id="input" rows="2" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+  </div>
+
+<script>
+"use strict";
+
+// --------------------------------------------------------------- 状态
+const listEl = document.getElementById("messageList");
+const inputEl = document.getElementById("input");
+const apiUrlEl = document.getElementById("apiUrl");
+const mockBtn = document.getElementById("mockBtn");
+const sendBtn = document.getElementById("sendBtn");
+const stopBtn = document.getElementById("stopBtn");
+
+let abortController = null;
+let seq = 0;
+const nextId = () => `msg-${Date.now()}-${seq++}`;
+
+// --------------------------------------------------------- SSE 分帧解析
+// 与 chat.tsx 中的 readSSE / parseFrame 同一套逻辑，纯 JS 实现。
+function parseFrame(frame) {
+  const dataLines = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return null;
+  return JSON.parse(dataLines.join("\n"));
+}
+
+class SseParser {
+  constructor(onEvent) {
+    this.buffer = "";
+    this.onEvent = onEvent;
+  }
+  push(text) {
+    this.buffer += text;
+    let sep;
+    while ((sep = this.buffer.indexOf("\n\n")) >= 0) {
+      const frame = this.buffer.slice(0, sep);
+      this.buffer = this.buffer.slice(sep + 2);
+      const payload = parseFrame(frame);
+      if (payload) this.onEvent(payload);
+    }
+  }
+  flush() {
+    const tail = this.buffer.trim();
+    if (tail) {
+      const payload = parseFrame(tail);
+      if (payload) this.onEvent(payload);
+    }
+    this.buffer = "";
+  }
+}
+
+// --------------------------------------------------------- 消息渲染
+function addMessage(role) {
+  const id = nextId();
+  const wrap = document.createElement("div");
+  wrap.className = `message ${role}`;
+  wrap.dataset.id = id;
+  wrap.innerHTML = '<div class="bubble"></div>';
+  listEl.appendChild(wrap);
+  return id;
+}
+
+function getBubble(id) {
+  return listEl.querySelector(`[data-id="${id}"] .bubble`);
+}
+
+function addTrace(id, trace) {
+  const wrap = listEl.querySelector(`[data-id="${id}"]`);
+  let details = wrap.querySelector("details.trace");
+  if (!details) {
+    details = document.createElement("details");
+    details.className = "trace";
+    details.innerHTML = "<summary>工具调用 0 步</summary><ul></ul>";
+    wrap.appendChild(details);
+  }
+  const ul = details.querySelector("ul");
+  const li = document.createElement("li");
+  li.dataset.trace = `${trace.tool}-${trace.status}`;
+  li.innerHTML = `<code></code>（${trace.status}）`;
+  li.querySelector("code").textContent = trace.tool;
+  if (trace.observation) {
+    const p = document.createElement("p");
+    p.textContent = trace.observation;
+    li.appendChild(p);
+  }
+  ul.appendChild(li);
+  details.querySelector("summary").textContent = `工具调用 ${ul.children.length} 步`;
+}
+
+function showError(id, message) {
+  const wrap = listEl.querySelector(`[data-id="${id}"]`);
+  const div = document.createElement("div");
+  div.className = "error";
+  div.textContent = `出错：${message}`;
+  wrap.appendChild(div);
+}
+
+// 把一条 StreamEvent 更新到对应消息上。
+function applyEvent(assistantId, evt) {
+  switch (evt.type) {
+    case "token": {
+      const bubble = getBubble(assistantId);
+      bubble.textContent += evt.delta;
+      break;
+    }
+    case "tool_start":
+      addTrace(assistantId, { tool: evt.tool, args: evt.args, status: "running" });
+      break;
+    case "tool_end":
+      addTrace(assistantId, { tool: evt.tool, status: "done", observation: evt.observation });
+      break;
+    case "error":
+      showError(assistantId, evt.message);
+      break;
+    case "done":
+      break;
+  }
+}
+
+// --------------------------------------------------------- 后端模式
+async function sendToBackend(text) {
+  const assistantId = addMessage("assistant");
+  abortController = new AbortController();
+
+  try {
+    const resp = await fetch(apiUrlEl.value, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, session_id: "demo" }),
+      signal: abortController.signal,
+    });
+    if (!resp.ok) throw new Error(`后端返回 ${resp.status}`);
+    if (!resp.body) throw new Error("响应没有 body，无法流式读取");
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    const parser = new SseParser((evt) => applyEvent(assistantId, evt));
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.flush();
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    showError(assistantId, err.message);
+  } finally {
+    abortController = null;
+    stopBtn.disabled = true;
+    sendBtn.disabled = false;
+    mockBtn.disabled = false;
+  }
+}
+
+// --------------------------------------------------------- 模拟模式
+// 手工拼出几段标准 SSE 帧，走同一个 SseParser，验证分帧与渲染逻辑。
+function sseFrame(obj) {
+  return `data: ${JSON.stringify(obj)}\n\n`;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function sendMock(text) {
+  const assistantId = addMessage("assistant");
+  stopBtn.disabled = false;
+  sendBtn.disabled = true;
+  mockBtn.disabled = true;
+
+  const parser = new SseParser((evt) => applyEvent(assistantId, evt));
+  const frames = [
+    sseFrame({ type: "tool_start", tool: "search_kb", args: { query: text } }),
+    sseFrame({ type: "tool_end", tool: "search_kb", observation: "召回 2 条相关条目：退货政策、退款时效" }),
+  ];
+
+  const answer = `已根据知识库回答你的问题「${text}」：\n1. 退货需在签收后 7 天内申请；\n2. 退款审核通过后 1–3 个工作日原路退回。`;
+  for (const ch of answer) frames.push(sseFrame({ type: "token", delta: ch }));
+  frames.push(sseFrame({ type: "done" }));
+
+  try {
+    for (const frame of frames) {
+      await sleep(90);
+      parser.push(frame);
+    }
+    parser.flush();
+  } finally {
+    stopBtn.disabled = true;
+    sendBtn.disabled = false;
+    mockBtn.disabled = false;
+  }
+}
+
+// --------------------------------------------------------- 事件绑定
+function currentText() {
+  const text = inputEl.value.trim();
+  if (!text) return null;
+  inputEl.value = "";
+  return text;
+}
+
+sendBtn.addEventListener("click", () => {
+  const text = currentText();
+  if (text) sendToBackend(text);
+});
+
+mockBtn.addEventListener("click", () => {
+  const text = currentText();
+  if (text) sendMock(text);
+});
+
+stopBtn.addEventListener("click", () => {
+  abortController && abortController.abort();
+});
+
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const text = currentText();
+    if (text) sendToBackend(text);
+  }
+});
+</script>
+</body>
+</html>

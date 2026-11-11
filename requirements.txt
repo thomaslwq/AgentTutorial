@@ -1,0 +1,7 @@
+# ── 文档站点（MkDocs）依赖：本地预览与 GitHub Actions 构建共用 ──
+mkdocs-material>=9.5,<10
+mkdocs-git-revision-date-plugin>=0.3.2
+pymdown-extensions>=10.0
+
+# ── 各章示例代码的依赖请见 examples/chXX-*/requirements.txt，
+#    与站点依赖分开安装，避免拉重。 ──

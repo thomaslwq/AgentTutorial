@@ -1,0 +1,2 @@
+# 骨架本身只依赖 Python 标准库；接入真实模型 / Agent 循环时安装 openai
+openai>=1.40,<2

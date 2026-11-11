@@ -1,0 +1,15 @@
+{
+  "name": "ch17-frontend-chat-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "第17章 React + TypeScript 聊天界面关键组件示例（SSE 流式接收）",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}

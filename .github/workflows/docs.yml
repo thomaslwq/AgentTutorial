@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────
+# AgentTutorial 文档站点自动构建与部署
+# 触发：push 到 main 分支、手动触发（workflow_dispatch）
+# 行为：安装依赖 → mkdocs build → 发布到 gh-pages 分支
+# 前置：仓库 Settings → Pages → Source 选择 "Deploy from a branch"，
+#       分支选 gh-pages / 根目录。首次部署后 Actions 权限见 README。
+# ─────────────────────────────────────────────────────────────
+
+name: Deploy MkDocs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements.txt"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-revision-date 插件需要完整历史
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build MkDocs site
+        run: mkdocs build --strict
+
+      - name: Deploy to gh-pages
+        id: deployment
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          keep_files: false
+          force_orphan: true
