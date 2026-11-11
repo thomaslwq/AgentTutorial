@@ -3,7 +3,10 @@
 # 触发：push 到 main 分支、手动触发（workflow_dispatch）
 # 行为：安装依赖 → mkdocs build → 发布到 gh-pages 分支
 # 前置：仓库 Settings → Pages → Source 选择 "Deploy from a branch"，
-#       分支选 gh-pages / 根目录。首次部署后 Actions 权限见 README。
+#       分支选 gh-pages / 根目录。
+# 说明：本工作流直接推送到 gh-pages 分支，由 Pages 的分支部署机制发布，
+#       因此 job 内不声明 environment: github-pages，
+#       避免受到该环境保护规则（仅允许 gh-pages 分支部署）的拦截。
 # ─────────────────────────────────────────────────────────────
 
 name: Deploy MkDocs to GitHub Pages
@@ -20,8 +23,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
@@ -30,9 +31,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
